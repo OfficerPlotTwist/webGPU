@@ -17,11 +17,10 @@ Bring up a rented Linux GPU machine that:
 The relay service in this repo has:
 
 - a `mock` backend for transport testing
+- a native `diffusers` backend for direct CUDA inference
 - a `streamdiffusion` backend adapter for real inference
 
-The current repo does **not** yet include a plain `diffusers` backend. That means real inference currently expects a local `StreamDiffusion` checkout on the rented box.
-
-If you want to avoid that dependency, the next code change should be adding a native `diffusers` backend to `app/backends/`.
+For a Runpod box, prefer the native `diffusers` backend first. Use `streamdiffusion` only if you specifically need that workflow.
 
 ## Assumptions
 
@@ -103,39 +102,18 @@ Do not guess an older CUDA wheel for a `5090` unless you have already tested it 
 
 ## 7. Install the real inference stack dependencies
 
-The current real backend in this repo expects a `StreamDiffusion` checkout.
-
-Clone it beside this repo:
-
-```bash
-cd ..
-git clone https://github.com/cumulo-autumn/StreamDiffusion.git
-cd StreamDiffusion
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-```
-
-Install PyTorch in this env too:
+Preferred path for Runpod: install the native `diffusers` stack in the relay env.
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install diffusers transformers accelerate safetensors huggingface_hub
 ```
 
-Install the TD requirements that exist in your local workflow:
-
-```bash
-pip install -r StreamDiffusionTD/requirements_pc.txt
-```
-
-Notes:
-
-- `pywin32` is listed in that requirements file but is Windows-only. If install fails on Linux because of `pywin32`, remove that single package from the install list and continue.
-- If `xformers` is needed later, install it only after the base environment is working.
+Optional alternate path: if you specifically want the existing `streamdiffusion` backend, clone the upstream project beside this repo and install its dependencies there.
 
 ## 8. Log into Hugging Face
 
-Activate whichever env you want to use for downloading. The StreamDiffusion env is the safer choice because that is where real inference will run.
+Activate the relay env before downloading.
 
 ```bash
 source .venv/bin/activate
@@ -187,8 +165,7 @@ source .venv/bin/activate
 Set these env vars before launching the relay:
 
 ```bash
-export LIVE_DIFFUSION_BACKEND=streamdiffusion
-export STREAMDIFFUSION_TD_ROOT=$(realpath ../StreamDiffusion/StreamDiffusion)
+export LIVE_DIFFUSION_BACKEND=diffusers
 export LIVE_DIFFUSION_MODEL=stabilityai/sdxl-turbo
 export LIVE_DIFFUSION_WIDTH=512
 export LIVE_DIFFUSION_HEIGHT=512
@@ -199,6 +176,7 @@ Recommended show defaults:
 
 - `512x512`
 - `1` denoise step
+- `0` guidance scale for SDXL Turbo
 - JPEG output
 - no multi-session concurrency
 
@@ -229,7 +207,7 @@ curl http://127.0.0.1:8000/health
 Expected result:
 
 ```json
-{"status":"ok","backend":"streamdiffusion"}
+{"status":"ok","backend":"diffusers"}
 ```
 
 ## 14. Create the session
@@ -305,9 +283,20 @@ Before doors open:
 6. Confirm output appears in the Script TOP
 7. Keep the resolution at `512x512` unless you have already tested `768x768`
 
-## 18. Known risk
+## 18. If you still want StreamDiffusion instead
 
-The transport path in this repo is tested locally, but the `streamdiffusion` backend path was not validated on a real rented `RTX 5090` inside this workspace. The most likely friction point is Python package compatibility in the upstream `StreamDiffusion` environment, not the relay itself.
+Set:
+
+```bash
+export LIVE_DIFFUSION_BACKEND=streamdiffusion
+export STREAMDIFFUSION_TD_ROOT=$(realpath ../StreamDiffusion/StreamDiffusion)
+```
+
+Then use the existing StreamDiffusion install path from your local workflow.
+
+## 19. Known risk
+
+The transport path in this repo is tested locally, but the new `diffusers` backend was not validated on a real rented `RTX 5090` inside this workspace. The most likely friction point is package and CUDA compatibility on the host, not the relay transport itself.
 
 ## Sources
 

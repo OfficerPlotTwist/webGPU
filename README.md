@@ -7,6 +7,7 @@ It provides:
 - a FastAPI service with HTTP and WebSocket endpoints
 - a bounded session queue that drops stale frames under load
 - a mock backend for local development
+- an optional native `diffusers` backend for Runpod or any CUDA Linux host
 - an optional StreamDiffusion backend adapter for the real GPU host
 - a simple Python bridge script you can mirror from TouchDesigner
 - a rented-box smoke test script and show session template
@@ -20,6 +21,15 @@ Your existing local `StreamDiffusionTD` setup assumes:
 - the model process running on the same machine as TouchDesigner
 
 This service keeps the same practical workflow, but replaces same-machine transport with a remote-safe API.
+
+## Important deployment note
+
+If you are trying to run `SDXL` "through WebGPU on Runpod", split that into two separate pieces:
+
+- `Runpod` is the remote GPU machine. Inference there should run through `CUDA` with `PyTorch`.
+- `WebGPU` is mainly relevant in the browser or a local client runtime, not the normal way to run SDXL on a rented NVIDIA box.
+
+For this repo, the practical Runpod path is the new `diffusers` backend or the existing `streamdiffusion` backend, both on CUDA.
 
 ## Quick start
 
@@ -106,6 +116,26 @@ Set:
 - `STREAMDIFFUSION_TD_ROOT=/workspace/StreamDiffusion/StreamDiffusion`
 
 The adapter expects the remote machine to already have the StreamDiffusionTD dependencies installed. It loads `streamdiffusionTD/wrapper_td.py` dynamically and uses img2img mode.
+
+### Diffusers backend
+
+Set:
+
+- `LIVE_DIFFUSION_BACKEND=diffusers`
+- `LIVE_DIFFUSION_MODEL=stabilityai/sdxl-turbo`
+
+Install the GPU inference stack on the remote host:
+
+```powershell
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install diffusers transformers accelerate safetensors huggingface_hub
+```
+
+Notes:
+
+- This backend is intended for Linux CUDA hosts such as Runpod.
+- `img2img` mode uses `delta` as the effective `strength`, clamped to `0..1`.
+- For `sdxl-turbo`, start with `guidance_scale=0` and `denoise_steps=1`.
 
 ## GPU host notes
 

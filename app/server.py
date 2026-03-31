@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
+from app.backends.diffusers import DiffusersBackend
 from app.backends.mock import MockInferenceBackend
 from app.backends.streamdiffusion import StreamDiffusionBackend
 from app.config import AppConfig
@@ -17,6 +18,8 @@ config = AppConfig.from_env()
 def create_backend():
     if config.backend == "mock":
         return MockInferenceBackend()
+    if config.backend == "diffusers":
+        return DiffusersBackend()
     if config.backend == "streamdiffusion":
         root = config.resolved_streamdiffusion_root()
         if root is None:
