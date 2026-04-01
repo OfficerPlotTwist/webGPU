@@ -14,7 +14,15 @@ from fastapi import WebSocket
 from PIL import Image
 
 from app.backends.base import InferenceBackend
-from app.schemas import FrameResult, FrameSettings, SessionConfig, SessionMetrics, SessionSnapshot
+from app.schemas import (
+    FrameResult,
+    FrameSettings,
+    SessionConfig,
+    SessionMetrics,
+    SessionSnapshot,
+    WebRTCCandidate,
+)
+from app.webrtc import WebRTCSession
 
 logger = logging.getLogger("live_diffusion.session")
 
@@ -46,6 +54,7 @@ class SessionState:
         self.pending_event = asyncio.Event()
         self.pending_lock = asyncio.Lock()
         self.worker_task: asyncio.Task[None] | None = None
+        self.webrtc: WebRTCSession | None = None
 
     async def update_config(self, config: SessionConfig) -> None:
         self.config = config
@@ -137,6 +146,24 @@ class SessionState:
             metrics=self.metrics,
         )
 
+    async def ensure_webrtc(self) -> WebRTCSession:
+        if self.webrtc is None or self.webrtc.last_state == "closed":
+            self.webrtc = WebRTCSession.create(self.session_id)
+        return self.webrtc
+
+    async def apply_webrtc_offer(self, sdp: str):
+        session = await self.ensure_webrtc()
+        return await session.apply_offer(sdp)
+
+    async def add_webrtc_candidate(self, candidate: WebRTCCandidate) -> None:
+        session = await self.ensure_webrtc()
+        await session.add_candidate(candidate)
+
+    async def close_webrtc(self) -> None:
+        if self.webrtc is not None:
+            await self.webrtc.close()
+            self.webrtc = None
+
     def _apply_settings(self, settings: FrameSettings) -> None:
         update = self.config.model_dump()
         for key, value in settings.model_dump(exclude_none=True).items():
@@ -179,8 +206,12 @@ class SessionState:
                 encode_ms = (time.perf_counter() - encode_started_at) * 1000.0
                 self.metrics.processed += 1
                 self.metrics.last_latency_ms = result.latency_ms
+                webrtc_connected = self.webrtc is not None and self.webrtc.connected
+                webrtc_push_ms = None
+                if self.config.output_transport == "webrtc" and self.webrtc is not None:
+                    webrtc_push_ms = self.webrtc.track.push_image(result.image)
                 logger.info(
-                    "frame.process_done session_id=%s frame_id=%s queue_wait_ms=%.1f image_decode_ms=%.1f backend_reported_ms=%.1f backend_total_ms=%.1f encode_ms=%.1f output_format=%s",
+                    "frame.process_done session_id=%s frame_id=%s queue_wait_ms=%.1f image_decode_ms=%.1f backend_reported_ms=%.1f backend_total_ms=%.1f encode_ms=%.1f webrtc_connected=%s webrtc_push_ms=%s output_format=%s output_transport=%s",
                     self.session_id,
                     job.frame_id,
                     queue_wait_ms,
@@ -188,11 +219,19 @@ class SessionState:
                     result.latency_ms,
                     backend_total_ms,
                     encode_ms,
+                    webrtc_connected,
+                    f"{webrtc_push_ms:.1f}" if webrtc_push_ms is not None else "n/a",
                     payload.image_format,
+                    self.config.output_transport,
                 )
                 if job.future is not None and not job.future.done():
                     job.future.set_result(payload)
-                if job.websocket is not None:
+                should_send_binary = not (
+                    self.config.output_transport == "webrtc"
+                    and self.webrtc is not None
+                    and self.webrtc.connected
+                )
+                if job.websocket is not None and should_send_binary:
                     sent = await self._reply_to_connection(job.websocket, payload)
                     if not sent:
                         logger.warning(
@@ -201,12 +240,7 @@ class SessionState:
                             payload.frame_id,
                         )
                 else:
-                    await self._broadcast(
-                        {
-                            "type": "frame.result",
-                            **payload.model_dump(),
-                        }
-                    )
+                    await self._broadcast_result_meta(payload)
                 await self._broadcast(
                     {
                         "type": "session.metrics",
@@ -236,6 +270,17 @@ class SessionState:
         if target is None:
             return False
         return await self._reply_to_websocket(target, payload)
+
+    async def _broadcast_result_meta(self, payload: FrameResult) -> None:
+        await self._broadcast(
+            {
+                "type": "frame.result",
+                "frame_id": payload.frame_id,
+                "image_format": payload.image_format,
+                "latency_ms": payload.latency_ms,
+                "queue_depth": payload.queue_depth,
+            }
+        )
 
     def _resolve_reply_websocket(self, websocket: WebSocket) -> WebSocket | None:
         if websocket in self.connections:

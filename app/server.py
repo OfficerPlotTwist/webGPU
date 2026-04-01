@@ -11,7 +11,17 @@ from app.backends.diffusers import DiffusersBackend
 from app.backends.mock import MockInferenceBackend
 from app.backends.streamdiffusion import StreamDiffusionBackend
 from app.config import AppConfig
-from app.schemas import HTTPFrameRequest, SessionConfig, SessionCreateRequest, SessionCreateResponse, SessionConfigUpdate, WSMessage
+from app.schemas import (
+    HTTPFrameRequest,
+    SessionConfig,
+    SessionCreateRequest,
+    SessionCreateResponse,
+    SessionConfigUpdate,
+    WebRTCAnswerResponse,
+    WebRTCCandidateRequest,
+    WebRTCOfferRequest,
+    WSMessage,
+)
 from app.session import SessionRegistry
 
 config = AppConfig.from_env()
@@ -94,6 +104,26 @@ async def update_session_config(session_id: str, request: SessionConfigUpdate):
         raise HTTPException(status_code=404, detail="Unknown session") from exc
     await session.update_config(request.config)
     return session.snapshot()
+
+
+@app.post("/sessions/{session_id}/webrtc/offer", response_model=WebRTCAnswerResponse)
+async def webrtc_offer(session_id: str, request: WebRTCOfferRequest) -> WebRTCAnswerResponse:
+    try:
+        session = registry.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Unknown session") from exc
+    answer = await session.apply_webrtc_offer(request.sdp)
+    return WebRTCAnswerResponse(sdp=answer.sdp, type=answer.type)
+
+
+@app.post("/sessions/{session_id}/webrtc/candidate")
+async def webrtc_candidate(session_id: str, request: WebRTCCandidateRequest):
+    try:
+        session = registry.get(session_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Unknown session") from exc
+    await session.add_webrtc_candidate(request.candidate)
+    return {"status": "ok"}
 
 
 @app.post("/sessions/{session_id}/frames")

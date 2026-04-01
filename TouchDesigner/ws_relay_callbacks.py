@@ -7,12 +7,12 @@ import uuid
 DEFAULT_CONFIG = {
     "prompt": "neon fog, live abstract video feedback",
     "negative_prompt": "muddy, blurry, low detail",
-    "model_id_or_path": "stabilityai/sdxl-turbo",
+    "model_id_or_path": "stabilityai/sd-turbo",
     "width": 256,
     "height": 256,
     "guidance_scale": 0.0,
     "delta": 1.0,
-    "denoise_steps": 1,
+    "denoise_steps": 2,
     "seed": 2416333,
     "scheduler_name": "Euler",
     "frame_buffer_size": 1,
@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "mode": "img2img",
     "output_format": "jpeg",
     "jpeg_quality": 88,
+    "output_transport": "webrtc",
 }
 
 

@@ -24,6 +24,7 @@ class SessionConfig(BaseModel):
     mode: Literal["img2img", "txt2img"] = "img2img"
     output_format: Literal["jpeg", "png"] = "jpeg"
     jpeg_quality: int = Field(default=88, ge=40, le=100)
+    output_transport: Literal["websocket", "webrtc"] = "websocket"
 
 
 class SessionCreateRequest(BaseModel):
@@ -88,3 +89,23 @@ class WSMessage(BaseModel):
     image_base64: str | None = None
     image_format: Literal["jpeg", "png"] | None = None
     data: dict[str, Any] | None = None
+
+
+class WebRTCOfferRequest(BaseModel):
+    sdp: str
+    type: Literal["offer"]
+
+
+class WebRTCAnswerResponse(BaseModel):
+    sdp: str
+    type: Literal["answer"]
+
+
+class WebRTCCandidate(BaseModel):
+    candidate: str
+    sdpMid: str | None = None
+    sdpMLineIndex: int | None = None
+
+
+class WebRTCCandidateRequest(BaseModel):
+    candidate: WebRTCCandidate

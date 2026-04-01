@@ -16,6 +16,7 @@
     "acceleration": "none",
     "mode": "img2img",
     "output_format": "jpeg",
-    "jpeg_quality": 88
+    "jpeg_quality": 88,
+    "output_transport": "webrtc"
   }
 }
