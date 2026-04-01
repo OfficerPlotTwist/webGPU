@@ -9,13 +9,39 @@ import numpy as np
 SEND_TOP = "send_fit"
 WS_DAT = "ws_relay"
 JPEG_QUALITY = 75
-TARGET_FPS = 4.0
+TARGET_FPS = 3.0
+SEND_TIMEOUT_SEC = 5.0
 
 
 def send_latest_frame():
-    if _is_rate_limited():
-        return False
+    request_send()
+    return _flush_pending(force=True)
 
+
+def request_send():
+    parent().store("relay_pending_send", True)
+    parent().store("relay_dirty", True)
+    _set_status("relay_last_send_result", "queued")
+    return True
+
+
+def mark_result_received():
+    parent().store("relay_last_result_at", time.time())
+    parent().store("relay_in_flight", False)
+    _set_status("relay_last_send_result", "received")
+    _flush_pending()
+
+
+def mark_disconnected():
+    parent().store("relay_in_flight", False)
+    _set_status("relay_last_send_result", "disconnected")
+
+
+def process_frame_tick():
+    return _flush_pending()
+
+
+def _send_current_frame():
     ws = op(WS_DAT)
     top = op(SEND_TOP)
     if ws is None or top is None:
@@ -52,22 +78,42 @@ def send_latest_frame():
     )
     _send_binary(ws, encoded.tobytes())
 
+    parent().store("relay_in_flight", True)
+    parent().store("relay_pending_send", False)
     parent().store("relay_last_frame_id", frame_id)
     parent().store("relay_last_sent_at", time.time())
-    _set_status("relay_mode", "latest_frame_no_gate")
+    _set_status("relay_mode", "latest_frame_queue")
     _set_status("relay_last_send_result", "sent")
     return True
 
 
-def mark_result_received():
-    parent().store("relay_last_result_at", time.time())
-    _set_status("relay_last_send_result", "received")
+def _flush_pending(force=False):
+    if not parent().fetch("relay_pending_send", False):
+        return False
+    if _is_sending():
+        return False
+    if (not force) and _is_rate_limited():
+        return False
+    return _send_current_frame()
 
 
 def _is_rate_limited():
     last_sent = parent().fetch("relay_last_sent_at", 0.0)
     min_interval = 1.0 / TARGET_FPS
     return (time.time() - last_sent) < min_interval
+
+
+def _is_sending():
+    if not parent().fetch("relay_in_flight", False):
+        return False
+
+    last_sent = parent().fetch("relay_last_sent_at", 0.0)
+    if (time.time() - last_sent) > SEND_TIMEOUT_SEC:
+        parent().store("relay_in_flight", False)
+        _set_status("relay_last_send_result", "timeout_recovered")
+        return False
+
+    return True
 
 
 def _set_status(key, value):

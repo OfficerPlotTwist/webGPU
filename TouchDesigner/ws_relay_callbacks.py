@@ -35,8 +35,11 @@ def onDisconnect(dat):
     _set_status("connected", "0")
     _set_status("last_disconnect", str(time.time()))
     sender = op("relay_sender")
-    if sender is not None and hasattr(sender.module, "mark_result_received"):
-        sender.module.mark_result_received()
+    if sender is not None:
+        if hasattr(sender.module, "mark_disconnected"):
+            sender.module.mark_disconnected()
+        elif hasattr(sender.module, "mark_result_received"):
+            sender.module.mark_result_received()
     return
 
 
@@ -156,6 +159,12 @@ def send_denoise_steps_update(dat, denoise_steps):
     send_session_update(dat, config)
 
 
+def send_guidance_scale_update(dat, guidance_scale):
+    config = _build_current_config()
+    config["guidance_scale"] = float(guidance_scale)
+    send_session_update(dat, config)
+
+
 def send_frame_bytes(dat, image_bytes, image_format="jpeg", settings=None, frame_id=None):
     frame_id = frame_id or str(uuid.uuid4())
     dat.sendText(
@@ -258,6 +267,13 @@ def _build_current_config():
     if denoise_steps not in (None, ""):
         try:
             config["denoise_steps"] = min(8, max(1, int(round(float(denoise_steps)))))
+        except Exception:
+            pass
+
+    guidance_scale = _get_status("guidance_scale", "")
+    if guidance_scale not in (None, ""):
+        try:
+            config["guidance_scale"] = max(0.0, float(guidance_scale))
         except Exception:
             pass
 

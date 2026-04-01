@@ -39,6 +39,7 @@ class SessionState:
         self.config = config
         self.metrics = SessionMetrics()
         self.connections: set[WebSocket] = set()
+        self.active_websocket: WebSocket | None = None
         self.pending_job: FrameJob | None = None
         self.pending_event = asyncio.Event()
         self.pending_lock = asyncio.Lock()
@@ -118,9 +119,12 @@ class SessionState:
 
     async def add_connection(self, websocket: WebSocket) -> None:
         self.connections.add(websocket)
+        self.active_websocket = websocket
 
     async def remove_connection(self, websocket: WebSocket) -> None:
         self.connections.discard(websocket)
+        if self.active_websocket is websocket:
+            self.active_websocket = next(iter(self.connections), None)
 
     def snapshot(self) -> SessionSnapshot:
         return SessionSnapshot(
@@ -173,7 +177,7 @@ class SessionState:
                 if job.future is not None and not job.future.done():
                     job.future.set_result(payload)
                 if job.websocket is not None:
-                    sent = await self._reply_to_websocket(job.websocket, payload)
+                    sent = await self._reply_to_connection(job.websocket, payload)
                     if not sent:
                         logger.warning(
                             "frame.reply_ws_skipped session_id=%s frame_id=%s reason=websocket_closed",
@@ -210,6 +214,23 @@ class SessionState:
                         "error": str(exc),
                     }
                 )
+
+    async def _reply_to_connection(self, websocket: WebSocket, payload: FrameResult) -> bool:
+        target = self._resolve_reply_websocket(websocket)
+        if target is None:
+            return False
+        return await self._reply_to_websocket(target, payload)
+
+    def _resolve_reply_websocket(self, websocket: WebSocket) -> WebSocket | None:
+        if websocket in self.connections:
+            return websocket
+        if self.active_websocket in self.connections:
+            logger.info(
+                "frame.reply_ws_fallback session_id=%s using_active_connection=true",
+                self.session_id,
+            )
+            return self.active_websocket
+        return next(iter(self.connections), None)
 
     async def _reply_to_websocket(self, websocket: WebSocket, payload: FrameResult) -> bool:
         binary_payload = base64.b64decode(payload.image_base64)

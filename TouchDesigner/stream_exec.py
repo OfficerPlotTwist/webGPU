@@ -12,8 +12,8 @@ def onExit():
 
 def onFrameStart(frame):
     sender = op("relay_sender")
-    if sender is not None:
-        sender.module.send_latest_frame()
+    if sender is not None and hasattr(sender.module, "process_frame_tick"):
+        sender.module.process_frame_tick()
     return
 
 
