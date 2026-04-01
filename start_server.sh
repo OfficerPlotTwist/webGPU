@@ -4,17 +4,17 @@ set -euo pipefail
 cd /workspace/live-diffusion
 source .venv/bin/activate
 
-export LIVE_DIFFUSION_MODEL=stabilityai/sdxl-turbo
+export LIVE_DIFFUSION_MODEL=stabilityai/sd-turbo
 export LIVE_DIFFUSION_WIDTH=256
 export LIVE_DIFFUSION_HEIGHT=256
 export LIVE_DIFFUSION_JPEG_QUALITY=88
 
 export LIVE_DIFFUSION_BACKEND=streamdiffusion
-export STREAMDIFFUSION_TD_ROOT="${STREAMDIFFUSION_TD_ROOT:-/workspace/StreamDiffusion/StreamDiffusion}"
+export STREAMDIFFUSION_TD_ROOT="${STREAMDIFFUSION_TD_ROOT:-/workspace/StreamDiffusion}"
 
 if [[ ! -d "${STREAMDIFFUSION_TD_ROOT}" ]]; then
     echo "STREAMDIFFUSION_TD_ROOT not found: ${STREAMDIFFUSION_TD_ROOT}" >&2
-    echo "Set STREAMDIFFUSION_TD_ROOT to your StreamDiffusionTD checkout before starting the server." >&2
+    echo "Set STREAMDIFFUSION_TD_ROOT to your plain StreamDiffusion checkout before starting the server." >&2
     exit 1
 fi
 
