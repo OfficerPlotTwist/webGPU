@@ -10,7 +10,7 @@ export LIVE_DIFFUSION_HEIGHT=256
 export LIVE_DIFFUSION_JPEG_QUALITY=88
 
 export LIVE_DIFFUSION_BACKEND=streamdiffusion
-export STREAMDIFFUSION_TD_ROOT="${STREAMDIFFUSION_TD_ROOT:-/workspace/StreamDiffusionTD}"
+export STREAMDIFFUSION_TD_ROOT="${STREAMDIFFUSION_TD_ROOT:-/workspace/StreamDiffusion/StreamDiffusion}"
 
 if [[ ! -d "${STREAMDIFFUSION_TD_ROOT}" ]]; then
     echo "STREAMDIFFUSION_TD_ROOT not found: ${STREAMDIFFUSION_TD_ROOT}" >&2
