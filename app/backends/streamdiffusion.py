@@ -89,6 +89,7 @@ class StreamDiffusionBackend(InferenceBackend):
                 self.active_config.width != config.width,
                 self.active_config.height != config.height,
                 self.active_config.denoise_steps != config.denoise_steps,
+                self.active_config.tindexblock0step != config.tindexblock0step,
                 self.active_config.frame_buffer_size != config.frame_buffer_size,
                 self.active_config.acceleration != config.acceleration,
                 self.active_config.scheduler_name != config.scheduler_name,
@@ -140,7 +141,10 @@ class StreamDiffusionBackend(InferenceBackend):
         cfg_type = "none" if config.guidance_scale <= 1e-6 else "self"
         stream = self.stream_cls(
             pipe,
-            t_index_list=self._build_t_index_list(config.denoise_steps),
+            t_index_list=self._build_t_index_list(
+                config.denoise_steps,
+                first_step=config.tindexblock0step,
+            ),
             torch_dtype=self.torch.float16,
             width=config.width,
             height=config.height,
@@ -194,20 +198,22 @@ class StreamDiffusionBackend(InferenceBackend):
         return processed.convert("RGB")
 
     @staticmethod
-    def _build_t_index_list(denoise_steps: int) -> list[int]:
+    def _build_t_index_list(denoise_steps: int, first_step: int = 32) -> list[int]:
+        first_step = max(0, min(int(first_step), 999))
         presets = {
-            1: [32],
-            2: [32, 45],
-            3: [16, 32, 45],
-            4: [0, 16, 32, 45],
+            1: [first_step],
+            2: [first_step, 45],
+            3: [16, first_step, 45],
+            4: [0, 16, first_step, 45],
         }
         if denoise_steps in presets:
-            return presets[denoise_steps]
+            return sorted(set(max(0, min(45, v)) for v in presets[denoise_steps]))
         if denoise_steps <= 1:
-            return [32]
+            return [max(0, min(45, first_step))]
         max_t = 45
         if denoise_steps == 2:
-            return [32, max_t]
+            return sorted(set([max(0, min(45, first_step)), max_t]))
         step = max_t / max(1, denoise_steps - 1)
         values = [int(round(i * step)) for i in range(denoise_steps)]
+        values[0] = max(0, min(45, first_step))
         return sorted(set(values))

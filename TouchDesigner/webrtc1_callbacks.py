@@ -4,6 +4,12 @@ def start_connection():
     if webrtc is None or signaling is None:
         return None
 
+    for connection_id in list(webrtc.peerConnections):
+        try:
+            webrtc.closeConnection(connection_id)
+        except Exception:
+            pass
+
     signaling.module.set_status("webrtc_error", "")
     signaling.module.set_status("webrtc_track_id", "")
     signaling.module.set_status("webrtc_track_type", "")
@@ -100,6 +106,9 @@ def onTrack(webrtcDAT, connectionId, trackId, type):
             video_in.par.webrtcconnection = connectionId
             video_in.par.webrtctrack = trackId
             video_in.par.active = True
+            video_in.par.play = True
+            video_in.par.videobufferframes = 1
+            video_in.par.disablebuffering = True
         except Exception:
             pass
     return

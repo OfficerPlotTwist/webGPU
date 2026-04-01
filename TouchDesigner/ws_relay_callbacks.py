@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "guidance_scale": 0.0,
     "delta": 1.0,
     "denoise_steps": 2,
+    "tindexblock0step": 32,
     "seed": 2416333,
     "scheduler_name": "Euler",
     "frame_buffer_size": 1,
@@ -166,6 +167,19 @@ def send_guidance_scale_update(dat, guidance_scale):
     send_session_update(dat, config)
 
 
+def send_diffusion_controls_update(dat, denoise_steps=None, guidance_scale=None, delta=None, tindexblock0step=None):
+    config = _build_current_config()
+    if denoise_steps is not None:
+        config["denoise_steps"] = int(denoise_steps)
+    if guidance_scale is not None:
+        config["guidance_scale"] = float(guidance_scale)
+    if delta is not None:
+        config["delta"] = float(delta)
+    if tindexblock0step is not None:
+        config["tindexblock0step"] = int(tindexblock0step)
+    send_session_update(dat, config)
+
+
 def send_frame_bytes(dat, image_bytes, image_format="jpeg", settings=None, frame_id=None):
     frame_id = frame_id or str(uuid.uuid4())
     dat.sendText(
@@ -295,6 +309,20 @@ def _build_current_config():
     if guidance_scale not in (None, ""):
         try:
             config["guidance_scale"] = max(0.0, float(guidance_scale))
+        except Exception:
+            pass
+
+    delta = _get_status("delta", "")
+    if delta not in (None, ""):
+        try:
+            config["delta"] = max(0.0, float(delta))
+        except Exception:
+            pass
+
+    tindexblock0step = _get_status("tindexblock0step", "")
+    if tindexblock0step not in (None, ""):
+        try:
+            config["tindexblock0step"] = max(0, min(45, int(round(float(tindexblock0step)))))
         except Exception:
             pass
 

@@ -32,22 +32,34 @@ def onFrameStart(frame):
     decoder_error = _status(status, "decoder_error", "")
     decoder_state = _status(status, "decoder_state", "")
     frame_id = _status(status, "last_result_frame_id", "")
+    prompt = _status(status, "active_prompt", "")
+    delta = _status(status, "delta", "-")
+    guidance_scale = _status(status, "guidance_scale", "-")
+    denoise_steps = _status(status, "denoise_steps", "-")
+    tindexblock0step = _status(status, "tindexblock0step", "-")
     connection_label = "OK" if connected else "DOWN"
 
     line = (
         "[webgpu] conn={conn} backend={backend} out_fps={fps:.2f} "
-        "latency_ms={latency} send={send}"
+        "latency_ms={latency} send={send} "
+        "delta={delta} g_scale={guidance} dnoise_steps={denoise} t0={t0}"
     ).format(
         conn=connection_label,
         backend=backend,
         fps=stream_fps,
         latency=latency_ms,
         send=send_state,
+        delta=delta,
+        guidance=guidance_scale,
+        denoise=denoise_steps,
+        t0=tindexblock0step,
     )
     if decoder_state:
         line += " decoder={}".format(decoder_state)
     if frame_id:
         line += " frame={}".format(frame_id[:8])
+    if prompt:
+        line += " prompt={}".format(_shorten(prompt, 64))
     if decoder_error and decoder_state != "Frame received":
         line += " decoder_error={}".format(decoder_error)
     print(line)
@@ -66,3 +78,10 @@ def _as_int(value):
         return int(float(value))
     except Exception:
         return 0
+
+
+def _shorten(text, max_len):
+    text = str(text)
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."

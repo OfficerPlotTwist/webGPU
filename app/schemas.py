@@ -16,6 +16,7 @@ class SessionConfig(BaseModel):
     guidance_scale: float = Field(default=1.0, ge=0.0, le=20.0)
     delta: float = Field(default=1.0, ge=0.0, le=5.0)
     denoise_steps: int = Field(default=1, ge=1, le=8)
+    tindexblock0step: int = Field(default=32, ge=0, le=999)
     seed: int = 2416333
     scheduler_name: str = "Euler"
     frame_buffer_size: int = Field(default=1, ge=1, le=4)
@@ -49,6 +50,7 @@ class FrameSettings(BaseModel):
     negative_prompt: str | None = None
     guidance_scale: float | None = None
     delta: float | None = None
+    tindexblock0step: int | None = None
     seed: int | None = None
 
 

@@ -57,7 +57,9 @@ class SessionState:
         self.webrtc: WebRTCSession | None = None
 
     async def update_config(self, config: SessionConfig) -> None:
+        previous = self.config
         self.config = config
+        self._log_config_changes(previous, config, source="update")
 
     async def process_frame_now(
         self,
@@ -168,7 +170,9 @@ class SessionState:
         update = self.config.model_dump()
         for key, value in settings.model_dump(exclude_none=True).items():
             update[key] = value
+        previous = self.config
         self.config = SessionConfig(**update)
+        self._log_config_changes(previous, self.config, source="frame_settings")
 
     def _ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
@@ -372,6 +376,40 @@ class SessionState:
         image.save(buffer, format=save_format, **params)
         return buffer.getvalue()
 
+    def _log_config_changes(self, previous: SessionConfig | None, current: SessionConfig, source: str) -> None:
+        if previous is None:
+            logger.info(
+                "session.config session_id=%s source=%s prompt=%r negative_prompt=%r denoise_steps=%s guidance_scale=%s",
+                self.session_id,
+                source,
+                current.prompt,
+                current.negative_prompt,
+                current.denoise_steps,
+                current.guidance_scale,
+            )
+            return
+
+        changes: list[str] = []
+        tracked_fields = (
+            "prompt",
+            "negative_prompt",
+            "denoise_steps",
+            "guidance_scale",
+        )
+        for field in tracked_fields:
+            before = getattr(previous, field)
+            after = getattr(current, field)
+            if before != after:
+                changes.append(f"{field}={before!r}->{after!r}")
+
+        if changes:
+            logger.info(
+                "session.config_change session_id=%s source=%s %s",
+                self.session_id,
+                source,
+                " ".join(changes),
+            )
+
 
 class SessionRegistry:
     def __init__(self, backend: InferenceBackend, default_config: SessionConfig) -> None:
@@ -382,11 +420,13 @@ class SessionRegistry:
     async def get_or_create(self, session_id: str | None, config: SessionConfig | None = None) -> SessionState:
         session_id = session_id or str(uuid.uuid4())
         if session_id not in self.sessions:
-            self.sessions[session_id] = SessionState(
+            session = SessionState(
                 session_id=session_id,
                 backend=self.backend,
                 config=config or SessionConfig(**self.default_config.model_dump()),
             )
+            self.sessions[session_id] = session
+            session._log_config_changes(None, session.config, source="create")
         elif config is not None:
             await self.sessions[session_id].update_config(config)
         return self.sessions[session_id]
