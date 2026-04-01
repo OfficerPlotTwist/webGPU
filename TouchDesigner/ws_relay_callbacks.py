@@ -8,8 +8,8 @@ DEFAULT_CONFIG = {
     "prompt": "neon fog, live abstract video feedback",
     "negative_prompt": "muddy, blurry, low detail",
     "model_id_or_path": "stabilityai/sdxl-turbo",
-    "width": 512,
-    "height": 512,
+    "width": 256,
+    "height": 256,
     "guidance_scale": 0.0,
     "delta": 1.0,
     "denoise_steps": 1,
@@ -201,26 +201,36 @@ def send_frame_from_text_dat(dat, source_text_dat, image_format="jpeg", settings
 
 
 def _store_frame_meta(payload):
+    now = time.time()
     meta = {
         "frame_id": payload.get("frame_id", ""),
         "image_format": payload.get("image_format", ""),
         "latency_ms": payload.get("latency_ms", None),
         "queue_depth": payload.get("queue_depth", None),
-        "received_at": time.time(),
+        "received_at": now,
     }
     _write_text_dat("latest_frame_meta", json.dumps(meta, indent=2))
     _set_status("last_result_frame_id", meta["frame_id"])
     _set_status("last_latency_ms", str(meta["latency_ms"]))
     _set_status("last_queue_depth", str(meta["queue_depth"]))
+    last_sent_at = _get_float_status("last_send_epoch", 0.0)
+    if last_sent_at > 0.0:
+        _set_status("last_result_roundtrip_ms", "{:.1f}".format((now - last_sent_at) * 1000.0))
+    _set_status("last_result_received_at", str(now))
 
 
 def _store_frame_binary(byte_data):
     if byte_data is None:
         _set_status("last_error", "binary callback fired without payload bytes")
         return
+    started_at = time.perf_counter()
     encoded = base64.b64encode(byte_data).decode("ascii")
     _write_text_dat("latest_frame_b64", encoded)
     _set_status("latest_frame_b64_len", str(len(encoded)))
+    _set_status("last_binary_store_ms", "{:.1f}".format((time.perf_counter() - started_at) * 1000.0))
+    last_result_at = _get_float_status("last_result_received_at", 0.0)
+    if last_result_at > 0.0:
+        _set_status("result_to_binary_ms", "{:.1f}".format((time.time() - last_result_at) * 1000.0))
 
 
 def _write_text_dat(name, value):
@@ -250,6 +260,16 @@ def _get_status(key, default=None):
         if table[row, 0].val == key:
             return table[row, 1].val
     return default
+
+
+def _get_float_status(key, default=0.0):
+    value = _get_status(key, None)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
+    except Exception:
+        return default
 
 
 def _build_current_config():

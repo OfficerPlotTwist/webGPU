@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -177,6 +178,7 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
                     pending_binary_meta = {
                         "frame_id": message.frame_id,
                         "image_format": message.image_format,
+                        "frame_begin_at": time.perf_counter(),
                     }
                     logger.info(
                         "ws.frame_begin session_id=%s client=%s frame_id=%s image_format=%s",
@@ -194,11 +196,12 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
                 if pending_binary_meta is None:
                     raise ValueError("Received binary frame without preceding frame.begin")
                 logger.info(
-                    "ws.binary session_id=%s client=%s frame_id=%s bytes=%s",
+                    "ws.binary session_id=%s client=%s frame_id=%s bytes=%s after_begin_ms=%.1f",
                     session_id,
                     client,
                     pending_binary_meta["frame_id"],
                     len(message_in["bytes"]),
+                    (time.perf_counter() - pending_binary_meta["frame_begin_at"]) * 1000.0,
                 )
                 await session.submit_frame(
                     image_bytes=message_in["bytes"],

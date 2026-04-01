@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,7 @@ class FrameJob:
     image_format: str
     future: asyncio.Future[FrameResult] | None = None
     websocket: WebSocket | None = None
+    enqueued_at: float = 0.0
 
 
 class SessionState:
@@ -100,6 +102,7 @@ class SessionState:
                 image_format=image_format,
                 future=future,
                 websocket=websocket,
+                enqueued_at=time.perf_counter(),
             )
             self.metrics.submitted += 1
             self.pending_event.set()
@@ -156,22 +159,35 @@ class SessionState:
                 continue
 
             try:
+                worker_started_at = time.perf_counter()
+                queue_wait_ms = (worker_started_at - job.enqueued_at) * 1000.0
                 logger.info(
-                    "frame.process_start session_id=%s frame_id=%s bytes=%s",
+                    "frame.process_start session_id=%s frame_id=%s bytes=%s queue_wait_ms=%.1f",
                     self.session_id,
                     job.frame_id,
                     len(job.image_bytes),
+                    queue_wait_ms,
                 )
+                decode_started_at = time.perf_counter()
                 image = Image.open(io.BytesIO(job.image_bytes)).convert("RGB")
+                image_decode_ms = (time.perf_counter() - decode_started_at) * 1000.0
+                infer_started_at = time.perf_counter()
                 result = await self.backend.generate(image=image, session_config=self.config)
+                backend_total_ms = (time.perf_counter() - infer_started_at) * 1000.0
+                encode_started_at = time.perf_counter()
                 payload = self._build_result(job.frame_id, result.image, result.latency_ms)
+                encode_ms = (time.perf_counter() - encode_started_at) * 1000.0
                 self.metrics.processed += 1
                 self.metrics.last_latency_ms = result.latency_ms
                 logger.info(
-                    "frame.process_done session_id=%s frame_id=%s latency_ms=%.1f output_format=%s",
+                    "frame.process_done session_id=%s frame_id=%s queue_wait_ms=%.1f image_decode_ms=%.1f backend_reported_ms=%.1f backend_total_ms=%.1f encode_ms=%.1f output_format=%s",
                     self.session_id,
                     job.frame_id,
+                    queue_wait_ms,
+                    image_decode_ms,
                     result.latency_ms,
+                    backend_total_ms,
+                    encode_ms,
                     payload.image_format,
                 )
                 if job.future is not None and not job.future.done():
@@ -234,6 +250,7 @@ class SessionState:
 
     async def _reply_to_websocket(self, websocket: WebSocket, payload: FrameResult) -> bool:
         binary_payload = base64.b64decode(payload.image_base64)
+        reply_started_at = time.perf_counter()
         logger.info(
             "frame.reply_ws session_id=%s frame_id=%s binary_bytes=%s",
             self.session_id,
@@ -251,6 +268,13 @@ class SessionState:
                 }
             )
             await websocket.send_bytes(binary_payload)
+            reply_ms = (time.perf_counter() - reply_started_at) * 1000.0
+            logger.info(
+                "frame.reply_ws_done session_id=%s frame_id=%s reply_ms=%.1f",
+                self.session_id,
+                payload.frame_id,
+                reply_ms,
+            )
             return True
         except RuntimeError as exc:
             logger.warning(

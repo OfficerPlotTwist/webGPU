@@ -28,8 +28,9 @@ def request_send():
 def mark_result_received():
     parent().store("relay_last_result_at", time.time())
     parent().store("relay_in_flight", False)
-    _set_status("relay_last_send_result", "received")
-    _flush_pending()
+    if _flush_pending():
+        return
+    _set_status("relay_last_send_result", "idle")
 
 
 def mark_disconnected():
@@ -38,7 +39,12 @@ def mark_disconnected():
 
 
 def process_frame_tick():
-    return _flush_pending()
+    sent = _flush_pending()
+    if sent:
+        return True
+    if (not parent().fetch("relay_in_flight", False)) and (not parent().fetch("relay_pending_send", False)):
+        _set_status("relay_last_send_result", "idle")
+    return False
 
 
 def _send_current_frame():
@@ -47,6 +53,7 @@ def _send_current_frame():
     if ws is None or top is None:
         return False
 
+    capture_started_at = time.perf_counter()
     arr = top.numpyArray(delayed=True)
     if arr is None or arr.ndim != 3:
         return False
@@ -63,10 +70,12 @@ def _send_current_frame():
         bgr,
         [int(cv2.IMWRITE_JPEG_QUALITY), int(JPEG_QUALITY)],
     )
+    encode_ms = (time.perf_counter() - capture_started_at) * 1000.0
     if not ok:
         raise RuntimeError("cv2.imencode failed for relay_sender")
 
     frame_id = str(uuid.uuid4())
+    send_started_at = time.perf_counter()
     ws.sendText(
         json.dumps(
             {
@@ -77,11 +86,17 @@ def _send_current_frame():
         )
     )
     _send_binary(ws, encoded.tobytes())
+    send_ms = (time.perf_counter() - send_started_at) * 1000.0
 
     parent().store("relay_in_flight", True)
     parent().store("relay_pending_send", False)
     parent().store("relay_last_frame_id", frame_id)
-    parent().store("relay_last_sent_at", time.time())
+    sent_epoch = time.time()
+    parent().store("relay_last_sent_at", sent_epoch)
+    _set_status("last_encode_ms", "{:.1f}".format(encode_ms))
+    _set_status("last_send_ws_ms", "{:.1f}".format(send_ms))
+    _set_status("last_send_epoch", str(sent_epoch))
+    _set_status("last_sent_frame_id", frame_id)
     _set_status("relay_mode", "latest_frame_queue")
     _set_status("relay_last_send_result", "sent")
     return True

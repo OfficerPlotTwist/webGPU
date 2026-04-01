@@ -1,5 +1,6 @@
 import base64
 import json
+import time
 
 import cv2
 import numpy as np
@@ -10,6 +11,7 @@ def onGetCookLevel(scriptOp):
 
 
 def onCook(scriptOp):
+    cook_started_at = time.perf_counter()
     base = scriptOp.parent()
     meta_dat = base.op("latest_frame_meta") if base is not None else None
     image_dat = base.op("latest_frame_b64") if base is not None else None
@@ -54,10 +56,13 @@ def onCook(scriptOp):
         _set_status(base, "decoder_state", "Frame decode failed")
         return
 
-    scriptOp.copyNumpyArray(np.ascontiguousarray(rgb.astype(np.uint8)))
+    flipped = np.flipud(rgb)
+    scriptOp.copyNumpyArray(np.ascontiguousarray(flipped.astype(np.uint8)))
+    _clear_status(base, "decoder_error")
     _set_status(base, "decoder_state", "Frame received")
     _set_status(base, "decoder_last_frame_id", str(meta.get("frame_id", "")))
     _set_status(base, "decoder_last_latency_ms", str(meta.get("latency_ms", "")))
+    _set_status(base, "decoder_cook_ms", "{:.1f}".format((time.perf_counter() - cook_started_at) * 1000.0))
 
 
 def _fill_placeholder(scriptOp):
@@ -81,3 +86,15 @@ def _set_status(base, key, value):
             table[row, 1] = value
             return
     table.appendRow([key, value])
+
+
+def _clear_status(base, key):
+    if base is None:
+        return
+    table = base.op("relay_status")
+    if table is None:
+        return
+    for row in range(1, table.numRows):
+        if table[row, 0].val == key:
+            table[row, 1] = ""
+            return
