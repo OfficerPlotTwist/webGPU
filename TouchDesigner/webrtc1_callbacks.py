@@ -1,6 +1,7 @@
 def start_connection():
     webrtc = op("webrtc1")
     signaling = op("webrtc_signaling")
+    video_in = op("webrtc_video_in")
     if webrtc is None or signaling is None:
         return None
 
@@ -10,9 +11,19 @@ def start_connection():
         except Exception:
             pass
 
+    if video_in is not None:
+        try:
+            video_in.par.webrtcconnection = ""
+            video_in.par.webrtctrack = ""
+        except Exception:
+            pass
+
     signaling.module.set_status("webrtc_error", "")
     signaling.module.set_status("webrtc_track_id", "")
     signaling.module.set_status("webrtc_track_type", "")
+    signaling.module.set_status("webrtc_connection_id", "")
+    signaling.module.set_status("webrtc_ice_state", "new")
+    signaling.module.set_status("webrtc_state", "reset")
     connection_id = webrtc.openConnection()
     if not connection_id:
         signaling.module.set_status("webrtc_error", "openConnection failed")
@@ -98,10 +109,12 @@ def onTrack(webrtcDAT, connectionId, trackId, type):
         signaling.module.set_status("webrtc_track_id", trackId)
         signaling.module.set_status("webrtc_track_type", type)
         signaling.module.set_status("webrtc_state", "track")
+        signaling.module.set_status("webrtc_connection_id", connectionId)
 
     video_in = op("webrtc_video_in")
     if video_in is not None and type == "video":
         try:
+            video_in.par.mode = "webrtc"
             video_in.par.webrtc = "webrtc1"
             video_in.par.webrtcconnection = connectionId
             video_in.par.webrtctrack = trackId
@@ -109,6 +122,8 @@ def onTrack(webrtcDAT, connectionId, trackId, type):
             video_in.par.play = True
             video_in.par.videobufferframes = 1
             video_in.par.disablebuffering = True
+            if hasattr(video_in.par, "reloadpulse"):
+                video_in.par.reloadpulse.pulse()
         except Exception:
             pass
     return
@@ -118,6 +133,14 @@ def onRemoveTrack(webrtcDAT, connectionId, trackId, type):
     signaling = op("webrtc_signaling")
     if signaling is not None:
         signaling.module.set_status("webrtc_track_removed", trackId)
+    video_in = op("webrtc_video_in")
+    if video_in is not None and type == "video":
+        try:
+            if str(video_in.par.webrtctrack.eval()) == str(trackId):
+                video_in.par.webrtcconnection = ""
+                video_in.par.webrtctrack = ""
+        except Exception:
+            pass
     return
 
 
@@ -141,6 +164,14 @@ def onConnectionStateChange(webrtcDAT, connectionId, newState):
     signaling = op("webrtc_signaling")
     if signaling is not None:
         signaling.module.set_status("webrtc_state", newState)
+    video_in = op("webrtc_video_in")
+    if video_in is not None and newState in ("failed", "closed", "disconnected"):
+        try:
+            if str(video_in.par.webrtcconnection.eval()) == str(connectionId):
+                video_in.par.webrtcconnection = ""
+                video_in.par.webrtctrack = ""
+        except Exception:
+            pass
     return
 
 
