@@ -175,7 +175,7 @@ class StreamDiffusionBackend(InferenceBackend):
         return self._run_stream_txt2img()
 
     def _run_stream_img2img(self, image: Image.Image) -> Image.Image:
-        result = self.stream(image=image.convert("RGB"))
+        result = self.stream(image.convert("RGB"))
         return self._to_pil(result)
 
     def _run_stream_txt2img(self) -> Image.Image:
