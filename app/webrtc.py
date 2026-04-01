@@ -11,13 +11,15 @@ from PIL import Image
 from app.schemas import WebRTCCandidate
 
 logger = logging.getLogger("live_diffusion.webrtc")
+WEBRTC_IMPORT_ERROR: Exception | None = None
 
 try:
     import av
     from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
     from aiortc.contrib.media import MediaRelay
     from aiortc.rtcicetransport import candidate_from_sdp
-except ImportError:  # pragma: no cover - dependency availability is environment-specific
+except Exception as exc:  # pragma: no cover - dependency availability is environment-specific
+    WEBRTC_IMPORT_ERROR = exc
     av = None
     RTCPeerConnection = None
     RTCSessionDescription = None
@@ -114,7 +116,11 @@ class WebRTCSession:
 
 def _ensure_webrtc_dependencies() -> None:
     if RTCPeerConnection is None or RTCSessionDescription is None or av is None:
+        detail = ""
+        if WEBRTC_IMPORT_ERROR is not None:
+            detail = f" Underlying import error: {WEBRTC_IMPORT_ERROR!r}"
         raise RuntimeError(
             "WebRTC transport requires optional dependencies `aiortc` and `av`. "
             "Install the updated requirements before using output_transport='webrtc'."
+            + detail
         )
