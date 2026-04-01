@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -13,6 +14,8 @@ from PIL import Image
 
 from app.backends.base import InferenceBackend
 from app.schemas import FrameResult, FrameSettings, SessionConfig, SessionMetrics, SessionSnapshot
+
+logger = logging.getLogger("live_diffusion.session")
 
 
 @dataclass(slots=True)
@@ -81,6 +84,12 @@ class SessionState:
 
         async with self.pending_lock:
             if self.pending_job is not None:
+                logger.info(
+                    "frame.drop session_id=%s dropped_frame_id=%s replacement_frame_id=%s",
+                    self.session_id,
+                    self.pending_job.frame_id,
+                    frame_id,
+                )
                 self.metrics.dropped += 1
                 if self.pending_job.future is not None and not self.pending_job.future.done():
                     self.pending_job.future.set_exception(RuntimeError("Dropped due to newer frame"))
@@ -94,6 +103,14 @@ class SessionState:
             self.metrics.submitted += 1
             self.pending_event.set()
             self._ensure_worker()
+            logger.info(
+                "frame.enqueue session_id=%s frame_id=%s bytes=%s image_format=%s websocket_reply=%s",
+                self.session_id,
+                frame_id,
+                len(image_bytes),
+                image_format,
+                websocket is not None,
+            )
 
         if not wait_for_result:
             return None
@@ -135,14 +152,33 @@ class SessionState:
                 continue
 
             try:
+                logger.info(
+                    "frame.process_start session_id=%s frame_id=%s bytes=%s",
+                    self.session_id,
+                    job.frame_id,
+                    len(job.image_bytes),
+                )
                 image = Image.open(io.BytesIO(job.image_bytes)).convert("RGB")
                 result = await self.backend.generate(image=image, session_config=self.config)
                 payload = self._build_result(job.frame_id, result.image, result.latency_ms)
                 self.metrics.processed += 1
                 self.metrics.last_latency_ms = result.latency_ms
+                logger.info(
+                    "frame.process_done session_id=%s frame_id=%s latency_ms=%.1f output_format=%s",
+                    self.session_id,
+                    job.frame_id,
+                    result.latency_ms,
+                    payload.image_format,
+                )
                 if job.future is not None and not job.future.done():
                     job.future.set_result(payload)
                 if job.websocket is not None:
+                    logger.info(
+                        "frame.reply_ws session_id=%s frame_id=%s binary_bytes=%s",
+                        self.session_id,
+                        payload.frame_id,
+                        len(base64.b64decode(payload.image_base64)),
+                    )
                     await job.websocket.send_json(
                         {
                             "type": "frame.result",
@@ -167,6 +203,12 @@ class SessionState:
                     }
                 )
             except Exception as exc:
+                logger.exception(
+                    "frame.process_error session_id=%s frame_id=%s error=%s",
+                    self.session_id,
+                    job.frame_id,
+                    exc,
+                )
                 self.metrics.failed += 1
                 if job.future is not None and not job.future.done():
                     job.future.set_exception(exc)

@@ -8,7 +8,7 @@ Replace `<YOUR-REPO-URL>` with your repo URL.
 
 ```bash
 cd /workspace
-git clone <YOUR-REPO-URL> live-diffusion
+git clone https://github.com/OfficerPlotTwist/webGPU live-diffusion
 cd /workspace/live-diffusion
 ```
 
@@ -41,7 +41,8 @@ pip install diffusers transformers accelerate safetensors huggingface_hub
 ## 6. Log into Hugging Face
 
 ```bash
-huggingface-cli login
+python -m pip install huggingface_hub
+  hf auth login
 ```
 
 Paste your token when prompted.

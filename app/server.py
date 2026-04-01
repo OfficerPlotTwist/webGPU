@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -13,6 +14,7 @@ from app.schemas import HTTPFrameRequest, SessionConfig, SessionCreateRequest, S
 from app.session import SessionRegistry
 
 config = AppConfig.from_env()
+logger = logging.getLogger("live_diffusion.ws")
 
 
 def create_backend():
@@ -103,6 +105,8 @@ async def submit_frame(
 @app.websocket("/ws/{session_id}")
 async def ws_session(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
+    client = f"{websocket.client.host}:{websocket.client.port}" if websocket.client else "unknown"
+    logger.info("ws.accept session_id=%s client=%s", session_id, client)
     session = await registry.get_or_create(session_id)
     await session.add_connection(websocket)
     pending_binary_meta: dict[str, str] | None = None
@@ -120,6 +124,15 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
             if "text" in message_in and message_in["text"] is not None:
                 raw = message_in["text"]
                 message = WSMessage.model_validate_json(raw)
+                logger.info(
+                    "ws.text session_id=%s client=%s type=%s frame_id=%s has_config=%s has_image_base64=%s",
+                    session_id,
+                    client,
+                    message.type,
+                    message.frame_id,
+                    message.config is not None,
+                    bool(message.image_base64),
+                )
 
                 if message.type == "ping":
                     await websocket.send_json({"type": "pong"})
@@ -154,6 +167,13 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
                         "frame_id": message.frame_id,
                         "image_format": message.image_format,
                     }
+                    logger.info(
+                        "ws.frame_begin session_id=%s client=%s frame_id=%s image_format=%s",
+                        session_id,
+                        client,
+                        message.frame_id,
+                        message.image_format,
+                    )
                     continue
 
                 await websocket.send_json({"type": "warning", "message": f"Unknown message type: {message.type}"})
@@ -162,6 +182,13 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
             if "bytes" in message_in and message_in["bytes"] is not None:
                 if pending_binary_meta is None:
                     raise ValueError("Received binary frame without preceding frame.begin")
+                logger.info(
+                    "ws.binary session_id=%s client=%s frame_id=%s bytes=%s",
+                    session_id,
+                    client,
+                    pending_binary_meta["frame_id"],
+                    len(message_in["bytes"]),
+                )
                 await session.submit_frame(
                     image_bytes=message_in["bytes"],
                     image_format=pending_binary_meta["image_format"],
@@ -176,7 +203,9 @@ async def ws_session(websocket: WebSocket, session_id: str) -> None:
             if message_in.get("type") == "websocket.disconnect":
                 raise WebSocketDisconnect()
     except WebSocketDisconnect:
+        logger.info("ws.disconnect session_id=%s client=%s", session_id, client)
         await session.remove_connection(websocket)
     except Exception as exc:
+        logger.exception("ws.error session_id=%s client=%s error=%s", session_id, client, exc)
         await websocket.send_json({"type": "session.error", "error": str(exc)})
         await session.remove_connection(websocket)
