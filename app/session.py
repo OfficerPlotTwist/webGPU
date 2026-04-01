@@ -173,22 +173,13 @@ class SessionState:
                 if job.future is not None and not job.future.done():
                     job.future.set_result(payload)
                 if job.websocket is not None:
-                    logger.info(
-                        "frame.reply_ws session_id=%s frame_id=%s binary_bytes=%s",
-                        self.session_id,
-                        payload.frame_id,
-                        len(base64.b64decode(payload.image_base64)),
-                    )
-                    await job.websocket.send_json(
-                        {
-                            "type": "frame.result",
-                            "frame_id": payload.frame_id,
-                            "image_format": payload.image_format,
-                            "latency_ms": payload.latency_ms,
-                            "queue_depth": payload.queue_depth,
-                        }
-                    )
-                    await job.websocket.send_bytes(base64.b64decode(payload.image_base64))
+                    sent = await self._reply_to_websocket(job.websocket, payload)
+                    if not sent:
+                        logger.warning(
+                            "frame.reply_ws_skipped session_id=%s frame_id=%s reason=websocket_closed",
+                            self.session_id,
+                            payload.frame_id,
+                        )
                 else:
                     await self._broadcast(
                         {
@@ -219,6 +210,44 @@ class SessionState:
                         "error": str(exc),
                     }
                 )
+
+    async def _reply_to_websocket(self, websocket: WebSocket, payload: FrameResult) -> bool:
+        binary_payload = base64.b64decode(payload.image_base64)
+        logger.info(
+            "frame.reply_ws session_id=%s frame_id=%s binary_bytes=%s",
+            self.session_id,
+            payload.frame_id,
+            len(binary_payload),
+        )
+        try:
+            await websocket.send_json(
+                {
+                    "type": "frame.result",
+                    "frame_id": payload.frame_id,
+                    "image_format": payload.image_format,
+                    "latency_ms": payload.latency_ms,
+                    "queue_depth": payload.queue_depth,
+                }
+            )
+            await websocket.send_bytes(binary_payload)
+            return True
+        except RuntimeError as exc:
+            logger.warning(
+                "frame.reply_ws_runtime session_id=%s frame_id=%s error=%s",
+                self.session_id,
+                payload.frame_id,
+                exc,
+            )
+            self.connections.discard(websocket)
+            return False
+        except Exception:
+            logger.exception(
+                "frame.reply_ws_error session_id=%s frame_id=%s",
+                self.session_id,
+                payload.frame_id,
+            )
+            self.connections.discard(websocket)
+            return False
 
     async def _broadcast(self, payload: dict[str, Any]) -> None:
         if not self.connections:

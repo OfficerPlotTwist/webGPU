@@ -56,6 +56,17 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "backend": backend.name}
 
 
+@app.post("/warmup")
+async def warmup() -> dict[str, str]:
+    await backend.warmup(registry.default_config)
+    return {
+        "status": "ok",
+        "backend": backend.name,
+        "model_id_or_path": registry.default_config.model_id_or_path,
+        "mode": registry.default_config.mode,
+    }
+
+
 @app.post("/sessions", response_model=SessionCreateResponse)
 async def create_session(request: SessionCreateRequest) -> SessionCreateResponse:
     session = await registry.get_or_create(request.session_id, request.config)

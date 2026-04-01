@@ -23,6 +23,15 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_warmup() -> None:
+    client = TestClient(app)
+    response = client.post("/warmup")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert "model_id_or_path" in payload
+
+
 def test_create_session_and_submit_frame() -> None:
     client = TestClient(app)
     created = client.post(

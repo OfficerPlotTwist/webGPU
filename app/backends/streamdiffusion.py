@@ -25,6 +25,9 @@ class StreamDiffusionBackend(InferenceBackend):
         if not self.root.exists():
             raise FileNotFoundError(f"STREAMDIFFUSION_TD_ROOT does not exist: {self.root}")
 
+    async def warmup(self, session_config: SessionConfig) -> None:
+        await asyncio.to_thread(self._ensure_wrapper, session_config)
+
     async def generate(
         self,
         image: Image.Image,

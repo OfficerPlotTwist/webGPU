@@ -24,6 +24,9 @@ class DiffusersBackend(InferenceBackend):
         if not self.torch.cuda.is_available():
             raise RuntimeError("Diffusers backend requires a CUDA-capable GPU host")
 
+    async def warmup(self, session_config: SessionConfig) -> None:
+        await asyncio.to_thread(self._ensure_pipeline, session_config)
+
     async def generate(
         self,
         image: Image.Image,

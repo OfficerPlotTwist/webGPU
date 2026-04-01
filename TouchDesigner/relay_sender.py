@@ -10,11 +10,10 @@ SEND_TOP = "send_fit"
 WS_DAT = "ws_relay"
 JPEG_QUALITY = 75
 TARGET_FPS = 4.0
-STALE_TIMEOUT_SEC = 3.0
 
 
 def send_latest_frame():
-    if _is_busy():
+    if _is_rate_limited():
         return False
 
     ws = op(WS_DAT)
@@ -53,31 +52,22 @@ def send_latest_frame():
     )
     _send_binary(ws, encoded.tobytes())
 
-    parent().store("relay_in_flight", True)
     parent().store("relay_last_frame_id", frame_id)
     parent().store("relay_last_sent_at", time.time())
-    _set_status("relay_mode", "one_in_flight")
+    _set_status("relay_mode", "latest_frame_no_gate")
     _set_status("relay_last_send_result", "sent")
     return True
 
 
 def mark_result_received():
-    parent().store("relay_in_flight", False)
     parent().store("relay_last_result_at", time.time())
     _set_status("relay_last_send_result", "received")
 
 
-def _is_busy():
-    comp = parent()
-    in_flight = comp.fetch("relay_in_flight", False)
-    last_sent = comp.fetch("relay_last_sent_at", 0.0)
-    if in_flight and last_sent and (time.time() - last_sent) > STALE_TIMEOUT_SEC:
-        comp.store("relay_in_flight", False)
-        _set_status("relay_last_send_result", "timeout_reset")
-        _set_status("relay_timeout_reset_at", str(time.time()))
-        in_flight = False
+def _is_rate_limited():
+    last_sent = parent().fetch("relay_last_sent_at", 0.0)
     min_interval = 1.0 / TARGET_FPS
-    return in_flight or (time.time() - last_sent) < min_interval
+    return (time.time() - last_sent) < min_interval
 
 
 def _set_status(key, value):

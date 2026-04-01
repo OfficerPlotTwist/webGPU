@@ -21,6 +21,10 @@ class InferenceBackend(ABC):
     async def setup(self) -> None:
         """Prepare shared backend resources."""
 
+    async def warmup(self, session_config: SessionConfig) -> None:
+        """Optionally preload model resources for a given config."""
+        return None
+
     @abstractmethod
     async def generate(
         self,
