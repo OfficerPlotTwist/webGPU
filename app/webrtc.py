@@ -17,7 +17,7 @@ try:
     import av
     from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
     from aiortc.contrib.media import MediaRelay
-    from aiortc.rtcicetransport import candidate_from_sdp
+    from aiortc.sdp import candidate_from_sdp
 except Exception as exc:  # pragma: no cover - dependency availability is environment-specific
     WEBRTC_IMPORT_ERROR = exc
     av = None
@@ -103,7 +103,10 @@ class WebRTCSession:
 
     async def add_candidate(self, candidate: WebRTCCandidate) -> None:
         _ensure_webrtc_dependencies()
-        ice = candidate_from_sdp(candidate.candidate)
+        candidate_sdp = candidate.candidate or ""
+        if candidate_sdp.startswith("candidate:"):
+            candidate_sdp = candidate_sdp.split(":", 1)[1]
+        ice = candidate_from_sdp(candidate_sdp)
         ice.sdpMid = candidate.sdpMid
         ice.sdpMLineIndex = candidate.sdpMLineIndex
         await self.peer.addIceCandidate(ice)
